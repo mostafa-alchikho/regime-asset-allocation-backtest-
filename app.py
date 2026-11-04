@@ -196,7 +196,7 @@ def tone(x, good_if_positive=True, eps=1e-12):
 
 
 def show(fig):
-    cfg = {"displaylogo": False, "modeBarButtonsToRemove": ["lasso2d", "select2d", "autoScale2d"]}
+    cfg = {"displayModeBar": False}          # keine Werkzeugleiste: Zoom per Ziehen, Doppelklick = Reset
     try:
         st.plotly_chart(fig, width="stretch", config=cfg)
     except TypeError:                      # aeltere Streamlit-Versionen
@@ -211,7 +211,7 @@ def style(fig, h=380, hover="x unified"):
         margin=dict(l=52, r=22, t=46, b=44), hovermode=hover,
         hoverlabel=dict(bgcolor="rgba(10,16,30,.94)", bordercolor=CYAN,
                         font=dict(family="Inter, sans-serif", size=12, color="#FFFFFF")),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
                     bgcolor="rgba(0,0,0,0)", font=dict(size=11, color="#B9C6DA")),
         xaxis=dict(gridcolor="rgba(255,255,255,.05)", zeroline=False, linecolor="rgba(255,255,255,.12)",
                    tickfont=dict(color=MUTED), showspikes=True, spikemode="across", spikesnap="cursor",
@@ -427,6 +427,7 @@ with tab1:
                           annotation_text=lab, annotation_position="top left",
                           annotation_font=dict(size=10, color=MUTED))
     style(fig, 400)
+    fig.update_layout(legend=dict(x=0.17, xanchor="left"))
     fig.update_xaxes(rangeselector=dict(
         buttons=[dict(count=5, label="5J", step="year", stepmode="backward"),
                  dict(count=10, label="10J", step="year", stepmode="backward"),
@@ -515,7 +516,7 @@ with tab2:
             fc.add_trace(go.Scatter(
                 x=mkt_ex[msk] * 100, y=strat_ex[msk] * 100, mode="markers", name=lab, customdata=dates[msk],
                 marker=dict(size=9, color=colr, opacity=0.92, line=dict(width=1.2, color="rgba(255,255,255,.9)")),
-                hovertemplate="<b>%{customdata}</b><br>Markt: %{x:.2f} %<br>Strategie: %{y:.2f} %<extra>" + lab + "</extra>"))
+                hovertemplate="<b>%{customdata}</b> · " + lab + "<br>Markt: %{x:.2f} %<br>Strategie: %{y:.2f} %<extra></extra>"))
         xl = np.linspace(mkt_ex.min(), mkt_ex.max(), 100)
         fc.add_trace(go.Scatter(x=xl * 100, y=(alpha_m + beta * xl) * 100, mode="lines", name=f"OLS (β = {fnum(beta)})",
                                 line=dict(color=ROSE, width=2.8), hoverinfo="skip"))
