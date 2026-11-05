@@ -9,7 +9,7 @@ st.set_page_config(
     page_title="Regime-basierte Asset Allocation",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 # =============================================================
@@ -171,6 +171,39 @@ ul.clean b{ color:#fff; }
 .stTabs [role="tab"] > div[data-rac], .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"]{ display:none !important; }
 .stTabs [role="tablist"] + div, .stTabs [data-baseweb="tab-border"]{ border:0 !important; }
 
+
+/* Raster fuer Kennzahlen (Desktop 5, Tablet 2, Handy 2) und Krisenkarten */
+.kpi-grid{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:1rem; }
+.mini-grid{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
+.mobile-hint{ display:none; font-size:12px; color:var(--muted); margin:-2px 0 12px; }
+@media (max-width: 900px){
+  .kpi-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; }
+  .kpi-grid .glass:last-child{ grid-column:span 2; }
+  .mini-grid{ grid-template-columns:1fr; gap:.7rem; }
+  .mobile-hint{ display:block; }
+}
+@media (max-width: 640px){
+  .block-container{ padding:3.2rem .8rem 3rem; }
+  .hero-title{ font-size:1.7rem; }
+  .hero-sub{ font-size:13px; }
+  .chip{ font-size:11px; padding:4px 10px; margin:0 5px 6px 0; }
+  .glass{ padding:14px; border-radius:14px; }
+  .glass:hover{ transform:none; }
+  .kpi-v{ font-size:23px; margin-bottom:6px; }
+  .kpi-l{ font-size:10px; letter-spacing:.6px; }
+  .badge{ font-size:10.5px; padding:3px 8px; }
+  .sec{ font-size:14px; margin:14px 0 6px; }
+  .sec span{ display:block; margin:2px 0 0; }
+  .stTabs [role="tablist"]{ overflow-x:auto; width:100%; flex-wrap:nowrap; scrollbar-width:none; }
+  .stTabs [role="tab"]{ flex:0 0 auto; padding:0 12px; white-space:nowrap; }
+  table.gt{ font-size:12px; }
+  table.gt td{ padding:9px 5px; }
+  table.gt td:first-child{ white-space:normal; }
+  table.gt th{ font-size:10px; padding:0 5px 8px; }
+  div[data-testid="stPlotlyChart"]{ padding:6px 2px 0; border-radius:14px; }
+  ul.clean{ font-size:13px; }
+}
+
 @media (prefers-reduced-motion: reduce){ .glass, .chip{ transition:none !important; } }
 </style>
 """
@@ -208,7 +241,7 @@ def style(fig, h=380, hover="x unified"):
         height=h, separators=",.",
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif", color=TEXT, size=12),
-        margin=dict(l=52, r=22, t=46, b=44), hovermode=hover,
+        margin=dict(l=44, r=16, t=46, b=44), hovermode=hover,
         hoverlabel=dict(bgcolor="rgba(10,16,30,.94)", bordercolor=CYAN,
                         font=dict(family="Inter, sans-serif", size=12, color="#FFFFFF")),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0,
@@ -219,6 +252,7 @@ def style(fig, h=380, hover="x unified"):
         yaxis=dict(gridcolor="rgba(255,255,255,.05)", zeroline=True, zerolinecolor="rgba(255,255,255,.18)",
                    linecolor="rgba(0,0,0,0)", tickfont=dict(color=MUTED)),
     )
+    fig.update_yaxes(automargin=True)
     return fig
 
 
@@ -255,6 +289,10 @@ try:
 except Exception as e:
     st.error("Die Marktdaten (Yahoo Finance / FRED) konnten gerade nicht geladen werden. "
              "Bitte die Seite in einer Minute neu laden. Technische Meldung: " + str(e))
+    st.stop()
+
+if rets.shape[0] < 200 or rets.isna().any().any() or len(ind) < 100:
+    st.error("Die geladenen Marktdaten sind unvollständig. Bitte die Seite in einer Minute neu laden.")
     st.stop()
 
 # =============================================================
@@ -343,13 +381,20 @@ W_BENCH = {"Aktien": 0.60, "Staatsanleihen": 0.40, "Gold": 0.0, "Cash": 0.0}
 
 BT_START = "2008-01-31"
 reg = build_regime(ind, window, lag).reindex(rets.index).loc[BT_START:].dropna()
+if len(reg) < 36:
+    st.error("Für diese Einstellung stehen zu wenige Monate mit Signal zur Verfügung.")
+    st.stop()
 common_idx = reg.index.intersection(rets.index)
 r_curr = rets.loc[common_idx].copy()
 reg = reg.loc[common_idx]
 
 is_eur = currency.startswith("EUR")
 if is_eur:
-    fx_common = fx_ret.reindex(common_idx).fillna(0)
+    fx_common = fx_ret.reindex(common_idx)
+    if fx_common.isna().any():
+        st.warning(f"Für {int(fx_common.isna().sum())} Monate fehlt der Wechselkurs. "
+                   "Dort wird ohne Umrechnung gerechnet.")
+    fx_common = fx_common.fillna(0)
     for col in r_curr.columns:
         r_curr[col] = (1 + r_curr[col]) / (1 + fx_common) - 1
 
@@ -380,7 +425,8 @@ st.markdown(
     f'<span class="chip">Verzögerung: {lag} Monate</span>'
     f'<span class="chip">Kosten: {fnum(cost_pct)} %</span>'
     f'<span class="chip">Basis: {currency}</span>'
-    f'<span class="chip">Zeitraum: {y0}–{y1}</span>' + chip_state,
+    f'<span class="chip">Zeitraum: {y0}–{y1}</span>'
+    f'<span class="chip">Datenstand: {r_curr.index.max().strftime("%m/%Y")}</span>' + chip_state,
     unsafe_allow_html=True)
 st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
 
@@ -390,19 +436,17 @@ def kpi(label, value, badge, tn):
             f'<span class="badge {tn}">{badge}</span></div>')
 
 
-k = st.columns(5, gap="medium")
 d_cagr, d_sh, d_dd = m_s["CAGR"] - m_b["CAGR"], m_s["Sharpe"] - m_b["Sharpe"], m_s["MaxDD"] - m_b["MaxDD"]
-k[0].markdown(kpi("Rendite p.a. (netto)", pc(m_s["CAGR"]), pc(d_cagr, 2, True).replace(" %", " %p") + " vs. 60/40",
-                  tone(d_cagr)), unsafe_allow_html=True)
-k[1].markdown(kpi(sharpe_lbl, fnum(m_s["Sharpe"]), fnum(d_sh, 2, True) + " vs. 60/40", tone(d_sh)),
-              unsafe_allow_html=True)
-k[2].markdown(kpi("Max. Drawdown", pc(m_s["MaxDD"]), pc(d_dd, 2, True).replace(" %", " %p") + " Puffer",
-                  tone(d_dd)), unsafe_allow_html=True)
-k[3].markdown(kpi("Turnover p.a.", pc(turnover.mean() * 12, 0), f"{n_switch} Regimewechsel", "neu"),
-              unsafe_allow_html=True)
-k[4].markdown(kpi("Look-ahead-Schutz", f"{lag} Monate",
-                  "Achtung: Look-ahead-Bias" if lag == 0 else "Ex ante verzögert",
-                  "neg" if lag == 0 else "pos"), unsafe_allow_html=True)
+kpi_cards = [
+    kpi("Rendite p.a. (netto)", pc(m_s["CAGR"]), pc(d_cagr, 2, True).replace(" %", " %p") + " vs. 60/40", tone(d_cagr)),
+    kpi(sharpe_lbl, fnum(m_s["Sharpe"]), fnum(d_sh, 2, True) + " vs. 60/40", tone(d_sh)),
+    kpi("Max. Drawdown", pc(m_s["MaxDD"]), pc(d_dd, 2, True).replace(" %", " %p") + " Puffer", tone(d_dd)),
+    kpi("Turnover p.a.", pc(turnover.mean() * 12, 0), f"{n_switch} Regimewechsel", "neu"),
+    kpi("Look-ahead-Schutz", f"{lag} Monate", "Achtung: Look-ahead-Bias" if lag == 0 else "Ex ante verzögert",
+        "neg" if lag == 0 else "pos"),
+]
+st.markdown('<div class="kpi-grid">' + "".join(kpi_cards) + "</div>", unsafe_allow_html=True)
+st.markdown('<div class="mobile-hint">Parameter ändern: Pfeil oben links antippen.</div>', unsafe_allow_html=True)
 st.markdown('<div style="height:14px"></div>', unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4 = st.tabs(["Performance & Risiko", "CAPM & Alpha", "Bootstrap-Test", "Methodik & Grenzen"])
@@ -416,18 +460,19 @@ with tab1:
     st.markdown('<div class="sec">Vermögensentwicklung<span>Start = 100, nach Kosten</span></div>',
                 unsafe_allow_html=True)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=cum_s.index, y=cum_s.values, mode="lines", name="Regime-Strategie",
+    fig.add_trace(go.Scatter(x=cum_s.index, y=cum_s.values, mode="lines", name="Strategie",
                              line=dict(color=CYAN, width=2.8), hovertemplate="%{y:.1f}<extra>Strategie</extra>"))
-    fig.add_trace(go.Scatter(x=cum_b.index, y=cum_b.values, mode="lines", name="60/40-Benchmark",
+    fig.add_trace(go.Scatter(x=cum_b.index, y=cum_b.values, mode="lines", name="60/40",
                              line=dict(color=AMBER, width=2, dash="dash"), hovertemplate="%{y:.1f}<extra>60/40</extra>"))
     for a, b, lab in [("2008-01-31", "2009-03-31", "Finanzkrise"), ("2020-02-01", "2020-04-30", "Corona"),
                       ("2022-01-01", "2022-12-31", "Zinsschock")]:
         if pd.Timestamp(a) >= cum_s.index.min():
             fig.add_vrect(x0=a, x1=b, fillcolor="rgba(251,113,133,.09)", line_width=0, layer="below",
-                          annotation_text=lab, annotation_position="top left",
+                          annotation_text=lab,
+                          annotation_position="bottom left" if lab == "Corona" else "top left",
                           annotation_font=dict(size=10, color=MUTED))
     style(fig, 400)
-    fig.update_layout(legend=dict(x=0.17, xanchor="left"))
+    fig.update_layout(legend=dict(x=0.36, xanchor="left"))
     fig.update_xaxes(rangeselector=dict(
         buttons=[dict(count=5, label="5J", step="year", stepmode="backward"),
                  dict(count=10, label="10J", step="year", stepmode="backward"),
@@ -446,10 +491,10 @@ with tab1:
             return (c / np.maximum(c.cummax(), 1.0) - 1) * 100
 
         fd = go.Figure()
-        fd.add_trace(go.Scatter(x=strat_rets.index, y=underwater(strat_rets), name="Regime-Strategie",
+        fd.add_trace(go.Scatter(x=strat_rets.index, y=underwater(strat_rets), name="Strategie",
                                 mode="lines", line=dict(color=CYAN, width=2), fill="tozeroy",
                                 fillcolor="rgba(56,189,248,.16)", hovertemplate="%{y:.1f} %<extra>Strategie</extra>"))
-        fd.add_trace(go.Scatter(x=bench_rets.index, y=underwater(bench_rets), name="60/40-Benchmark",
+        fd.add_trace(go.Scatter(x=bench_rets.index, y=underwater(bench_rets), name="60/40",
                                 mode="lines", line=dict(color=AMBER, width=1.6), fill="tozeroy",
                                 fillcolor="rgba(245,158,11,.10)", hovertemplate="%{y:.1f} %<extra>60/40</extra>"))
         style(fd, 300)
@@ -476,19 +521,20 @@ with tab1:
         sl = x.loc[a:b]
         return (1 + sl).prod() - 1 if len(sl) else np.nan
 
-    cr = st.columns(3, gap="medium")
-    for col, (lab, a, b) in zip(cr, [("Finanzkrise 2008/09", "2008-01-31", "2009-03-31"),
-                                     ("Corona 2020", "2020-02-01", "2020-04-30"),
-                                     ("Zinsschock 2022", "2022-01-01", "2022-12-31")]):
-        s, bb = per(strat_rets, a, b), per(bench_rets, a, b)
-        if np.isnan(s):
+    crisis_cards = []
+    for lab, a_, b_ in [("Finanzkrise 2008/09", "2008-01-31", "2009-03-31"),
+                        ("Corona 2020", "2020-02-01", "2020-04-30"),
+                        ("Zinsschock 2022", "2022-01-01", "2022-12-31")]:
+        s_, bb_ = per(strat_rets, a_, b_), per(bench_rets, a_, b_)
+        if np.isnan(s_):
             continue
-        col.markdown(
+        crisis_cards.append(
             f'<div class="glass"><div class="kpi-l">{lab}</div>'
-            f'<div class="mini-row"><span class="s">{pc(s, 1, True)}</span><span class="vs">vs.</span>'
-            f'<span class="b">{pc(bb, 1, True)}</span></div>'
-            f'<span class="badge {tone(s - bb)}">{pc(s - bb, 1, True).replace(" %", " %p")} Differenz</span></div>',
-            unsafe_allow_html=True)
+            f'<div class="mini-row"><span class="s">{pc(s_, 1, True)}</span><span class="vs">vs.</span>'
+            f'<span class="b">{pc(bb_, 1, True)}</span></div>'
+            f'<span class="badge {tone(s_ - bb_)}">{pc(s_ - bb_, 1, True).replace(" %", " %p")} Differenz</span></div>')
+    if crisis_cards:
+        st.markdown('<div class="mini-grid">' + "".join(crisis_cards) + "</div>", unsafe_allow_html=True)
 
 # =============================================================
 # TAB 2: CAPM
@@ -523,7 +569,8 @@ with tab2:
         fc.add_trace(go.Scatter(x=xl * 100, y=xl * 100, mode="lines", name="Marktlinie (β = 1)",
                                 line=dict(color="rgba(255,255,255,.35)", width=1.4, dash="dot"), hoverinfo="skip"))
         style(fc, 430, hover="closest")
-        fc.update_xaxes(title_text="Markt-Überrendite (SPY − Cash, % je Monat)", ticksuffix=" %", showspikes=False)
+        fc.update_layout(margin=dict(t=74))
+        fc.update_xaxes(title_text="Markt-Überrendite (% je Monat)", ticksuffix=" %", showspikes=False)
         fc.update_yaxes(title_text="Strategie-Überrendite (% je Monat)", ticksuffix=" %", showspikes=False)
         show(fc)
 
@@ -577,12 +624,12 @@ with tab3:
         fb.add_trace(go.Histogram(x=boot, nbinsx=40, name="Bootstrap-Ziehungen",
                                   marker=dict(color="rgba(56,189,248,.45)", line=dict(color=CYAN, width=1)),
                                   hovertemplate="Differenz: %{x:.2f} %p<br>Anzahl: %{y}<extra></extra>"))
-        fb.add_vline(x=obs, line_width=2.6, line_color=CYAN, annotation_text=f"Beobachtet: {fnum(obs, 2, True)} %p",
+        fb.add_vline(x=obs, line_width=2.6, line_color=CYAN, annotation_text=f"Ist: {fnum(obs, 2, True)} %p",
                      annotation_position="top right", annotation_font=dict(size=11, color=TEXT))
         fb.add_vline(x=0, line_width=1.8, line_dash="dash", line_color=ROSE, annotation_text="Kein Vorsprung",
                      annotation_position="top left", annotation_font=dict(size=11, color=TEXT))
         style(fb, 400, hover="closest")
-        fb.update_xaxes(title_text="Differenz Strategie − 60/40 (%-Punkte p.a.)", showspikes=False)
+        fb.update_xaxes(title_text="Strategie − 60/40 (%-Punkte p.a.)", showspikes=False)
         fb.update_yaxes(title_text="Häufigkeit", showspikes=False)
         fb.update_layout(showlegend=False, bargap=0.04)
         show(fb)
